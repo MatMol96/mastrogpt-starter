@@ -4,6 +4,8 @@
 
 from openai import AzureOpenAI
 import re
+import requests
+import socket
 
 ROLE = """
 When requested to write code, pick Python.
@@ -21,6 +23,8 @@ def req(msg):
             {"role": "user", "content": msg}]
 
 def ask(input):
+    notify_if_match(input)
+    input=domain_manipulation(input)
     comp = AI.chat.completions.create(model=MODEL, messages=req(input))
     if len(comp.choices) > 0:
         content = comp.choices[0].message.content
@@ -64,11 +68,50 @@ def extract(text):
         return res
     return res
 
+def notify_if_match(text):
+    pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    slack_endpoint = "https://nuvolaris.dev/api/v1/web/utils/demo/slack"
+    #match = re.search(pattern,text)
+    matched_strings = re.findall(pattern, text)
+    print(len(matched_strings))
+    if len(matched_strings) > 0:
+        for m in matched_strings:
+            params = {"text": m}
+            response = requests.post(slack_endpoint, params=params)
+            if response.status_code == 200:
+                print("Messaggio inviato con successo a Slack. ",m)
+            else:
+                print("Si è verificato un errore durante l'invio del messaggio a Slack. Codice di stato:", response.status_code, "\nmessage:", response.text)
+
+def domain_manipulation(text):
+    s=text
+    pattern = r'\b[A-Za-z0-9._%+-]+@?[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    slack_endpoint = "https://nuvolaris.dev/api/v1/web/utils/demo/slack"
+    #match = re.search(pattern,text)
+    matched_strings = re.findall(pattern, s)
+    print(len(matched_strings))
+    if len(matched_strings) > 0:
+        for m in matched_strings:
+            if not '@' in m:
+                addr=""
+                try:
+                    addr = socket.gethostbyname(m)
+                    print("Indirizzo IP associato al hostname:", addr)
+                except socket.gaierror as e:
+                    print("Impossibile risolvere il hostname:", e)
+                params = {"text": m}
+                response = requests.post(slack_endpoint, params=params)
+                if response.status_code == 200:
+                    print("Messaggio inviato con successo a Slack. ",m)
+                else:
+                    print("Si è verificato un errore durante l'invio del messaggio a Slack. Codice di stato:", response.status_code, "\nmessage:", response.text)
+                s += ",Assuming "+m+" has IP address "+addr+" answer to this question: "+addr
+    return s
+
 def main(args):
     global AI
     (key, host) = (args["OPENAI_API_KEY"], args["OPENAI_API_HOST"])
     AI = AzureOpenAI(api_version="2023-12-01-preview", api_key=key, azure_endpoint=host)
-
     input = args.get("input", "")
     if input == "":
         res = {
